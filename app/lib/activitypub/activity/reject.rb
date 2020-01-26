@@ -2,15 +2,19 @@
 
 class ActivityPub::Activity::Reject < ActivityPub::Activity
   def perform
+    return reject_follow_for_relay if relay_follow?
+    return follow_request_from_object.reject! unless follow_request_from_object.nil?
+    return UnfollowService.new.call(follow_from_object.target_account, @account) unless follow_from_object.nil?
+
     case @object['type']
     when 'Follow'
-      reject_follow
+      reject_embedded_follow
     end
   end
 
   private
 
-  def reject_follow
+  def reject_embedded_follow
     target_account = account_from_uri(target_uri)
 
     return if target_account.nil? || !target_account.local?
@@ -19,6 +23,18 @@ class ActivityPub::Activity::Reject < ActivityPub::Activity
     follow_request&.reject!
 
     UnfollowService.new.call(target_account, @account) if target_account.following?(@account)
+  end
+
+  def reject_follow_for_relay
+    relay.update!(state: :rejected)
+  end
+
+  def relay
+    @relay ||= Relay.find_by(follow_activity_id: object_uri) unless object_uri.nil?
+  end
+
+  def relay_follow?
+    relay.present?
   end
 
   def target_uri

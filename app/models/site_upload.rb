@@ -3,7 +3,7 @@
 #
 # Table name: site_uploads
 #
-#  id                :integer          not null, primary key
+#  id                :bigint(8)        not null, primary key
 #  var               :string           default(""), not null
 #  file_file_name    :string
 #  file_content_type :string
@@ -18,6 +18,7 @@ class SiteUpload < ApplicationRecord
   has_attached_file :file
 
   validates_attachment_content_type :file, content_type: /\Aimage\/.*\z/
+  validates :file, presence: true
   validates :var, presence: true, uniqueness: true
 
   before_save :set_meta

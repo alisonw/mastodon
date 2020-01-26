@@ -3,7 +3,7 @@
 #
 # Table name: preview_cards
 #
-#  id                 :integer          not null, primary key
+#  id                 :bigint(8)        not null, primary key
 #  url                :string           default(""), not null
 #  title              :string           default(""), not null
 #  description        :string           default(""), not null
@@ -34,7 +34,7 @@ class PreviewCard < ApplicationRecord
 
   has_and_belongs_to_many :statuses
 
-  has_attached_file :image, styles: { original: { geometry: '400x400>', file_geometry_parser: FastGeometryParser } }, convert_options: { all: '-quality 80 -strip' }
+  has_attached_file :image, styles: ->(f) { image_styles(f) }, convert_options: { all: '-quality 80 -strip' }
 
   include Attachmentable
 
@@ -43,13 +43,36 @@ class PreviewCard < ApplicationRecord
   validates_attachment_size :image, less_than: LIMIT
   remotable_attachment :image, LIMIT
 
+  scope :cached, -> { where.not(image_file_name: [nil, '']) }
+
   before_save :extract_dimensions, if: :link?
+
+  def missing_image?
+    width.present? && height.present? && image_file_name.blank?
+  end
 
   def save_with_optional_image!
     save!
   rescue ActiveRecord::RecordInvalid
     self.image = nil
     save!
+  end
+
+  class << self
+    private
+
+    def image_styles(f)
+      styles = {
+        original: {
+          geometry: '400x400>',
+          file_geometry_parser: FastGeometryParser,
+          convert_options: '-coalesce -strip',
+        },
+      }
+
+      styles[:original][:format] = 'jpg' if f.instance.image_content_type == 'image/gif'
+      styles
+    end
   end
 
   private

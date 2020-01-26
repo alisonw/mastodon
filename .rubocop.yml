@@ -1,3 +1,6 @@
+require:
+  - rubocop-rails
+
 AllCops:
   TargetRubyVersion: 2.3
   Exclude:
@@ -11,6 +14,7 @@ AllCops:
   - 'Vagrantfile'
   - 'vendor/**/*'
   - 'lib/json_ld/*'
+  - 'lib/templates/**/*'
 
 Bundler/OrderedGems:
   Enabled: false
@@ -61,13 +65,30 @@ Metrics/ParameterLists:
 Metrics/PerceivedComplexity:
   Max: 20
 
+Naming/MemoizedInstanceVariableName:
+  Enabled: false
+
 Rails:
   Enabled: true
+
+Rails/EnumHash:
+  Enabled: false
 
 Rails/HasAndBelongsToMany:
   Enabled: false
 
 Rails/SkipsModelValidations:
+  Enabled: false
+
+Rails/HttpStatus:
+  Enabled: false
+
+Rails/Exit:
+  Exclude:
+    - 'lib/mastodon/*'
+    - 'lib/cli.rb'
+
+Rails/HelperInstanceVariable:
   Enabled: false
 
 Style/ClassAndModuleChildren:
@@ -83,6 +104,9 @@ Style/Documentation:
 
 Style/DoubleNegation:
   Enabled: true
+
+Style/FormatStringToken:
+  Enabled: false
 
 Style/FrozenStringLiteralComment:
   Enabled: true
@@ -107,5 +131,8 @@ Style/RegexpLiteral:
 Style/SymbolArray:
   Enabled: false
 
-Style/TrailingCommaInLiteral:
+Style/TrailingCommaInArrayLiteral:
+  EnforcedStyleForMultiline: 'comma'
+
+Style/TrailingCommaInHashLiteral:
   EnforcedStyleForMultiline: 'comma'

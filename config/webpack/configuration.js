@@ -1,13 +1,12 @@
 // Common configuration for webpacker loaded from config/webpacker.yml
 
-const { join, resolve } = require('path');
+const { resolve } = require('path');
 const { env } = require('process');
 const { safeLoad } = require('js-yaml');
 const { readFileSync } = require('fs');
 
 const configPath = resolve('config', 'webpacker.yml');
-const loadersDir = join(__dirname, 'loaders');
-const settings = safeLoad(readFileSync(configPath), 'utf8')[env.NODE_ENV];
+const settings = safeLoad(readFileSync(configPath), 'utf8')[env.RAILS_ENV || env.NODE_ENV];
 
 const themePath = resolve('config', 'themes.yml');
 const themes = safeLoad(readFileSync(themePath), 'utf8');
@@ -33,7 +32,9 @@ const output = {
 module.exports = {
   settings,
   themes,
-  env,
-  loadersDir,
+  env: {
+    CDN_HOST: env.CDN_HOST,
+    NODE_ENV: env.NODE_ENV,
+  },
   output,
 };

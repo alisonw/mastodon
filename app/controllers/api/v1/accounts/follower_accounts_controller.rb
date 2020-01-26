@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class Api::V1::Accounts::FollowerAccountsController < Api::BaseController
-  before_action -> { doorkeeper_authorize! :read }
+  before_action -> { doorkeeper_authorize! :read, :'read:accounts' }
   before_action :set_account
   after_action :insert_pagination_headers
 
@@ -19,11 +19,19 @@ class Api::V1::Accounts::FollowerAccountsController < Api::BaseController
   end
 
   def load_accounts
-    default_accounts.merge(paginated_follows).to_a
+    return [] if hide_results?
+
+    scope = default_accounts
+    scope = scope.where.not(id: current_account.excluded_from_timeline_account_ids) unless current_account.nil?
+    scope.merge(paginated_follows).to_a
+  end
+
+  def hide_results?
+    (@account.user_hides_network? && current_account&.id != @account.id) || (current_account && @account.blocking?(current_account))
   end
 
   def default_accounts
-    Account.includes(:active_relationships).references(:active_relationships)
+    Account.includes(:active_relationships, :account_stat).references(:active_relationships)
   end
 
   def paginated_follows

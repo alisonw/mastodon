@@ -10,20 +10,31 @@ import {
 import {
   reblog,
   favourite,
+  bookmark,
   unreblog,
   unfavourite,
+  unbookmark,
   pin,
   unpin,
 } from '../actions/interactions';
-import { blockAccount } from '../actions/accounts';
 import {
   muteStatus,
   unmuteStatus,
   deleteStatus,
   hideStatus,
   revealStatus,
+  toggleStatusCollapse,
 } from '../actions/statuses';
+import {
+  unmuteAccount,
+  unblockAccount,
+} from '../actions/accounts';
+import {
+  blockDomain,
+  unblockDomain,
+} from '../actions/domain_blocks';
 import { initMuteModal } from '../actions/mutes';
+import { initBlockModal } from '../actions/blocks';
 import { initReport } from '../actions/reports';
 import { openModal } from '../actions/modal';
 import { defineMessages, injectIntl, FormattedMessage } from 'react-intl';
@@ -33,14 +44,18 @@ import { showAlertForError } from '../actions/alerts';
 const messages = defineMessages({
   deleteConfirm: { id: 'confirmations.delete.confirm', defaultMessage: 'Delete' },
   deleteMessage: { id: 'confirmations.delete.message', defaultMessage: 'Are you sure you want to delete this status?' },
-  blockConfirm: { id: 'confirmations.block.confirm', defaultMessage: 'Block' },
+  redraftConfirm: { id: 'confirmations.redraft.confirm', defaultMessage: 'Delete & redraft' },
+  redraftMessage: { id: 'confirmations.redraft.message', defaultMessage: 'Are you sure you want to delete this status and re-draft it? Favourites and boosts will be lost, and replies to the original post will be orphaned.' },
+  replyConfirm: { id: 'confirmations.reply.confirm', defaultMessage: 'Reply' },
+  replyMessage: { id: 'confirmations.reply.message', defaultMessage: 'Replying now will overwrite the message you are currently composing. Are you sure you want to proceed?' },
+  blockDomainConfirm: { id: 'confirmations.domain_block.confirm', defaultMessage: 'Hide entire domain' },
 });
 
 const makeMapStateToProps = () => {
   const getStatus = makeGetStatus();
 
   const mapStateToProps = (state, props) => ({
-    status: getStatus(state, props.id),
+    status: getStatus(state, props),
   });
 
   return mapStateToProps;
@@ -49,22 +64,34 @@ const makeMapStateToProps = () => {
 const mapDispatchToProps = (dispatch, { intl }) => ({
 
   onReply (status, router) {
-    dispatch(replyCompose(status, router));
+    dispatch((_, getState) => {
+      let state = getState();
+
+      if (state.getIn(['compose', 'text']).trim().length !== 0) {
+        dispatch(openModal('CONFIRM', {
+          message: intl.formatMessage(messages.replyMessage),
+          confirm: intl.formatMessage(messages.replyConfirm),
+          onConfirm: () => dispatch(replyCompose(status, router)),
+        }));
+      } else {
+        dispatch(replyCompose(status, router));
+      }
+    });
   },
 
   onModalReblog (status) {
-    dispatch(reblog(status));
-  },
-
-  onReblog (status, e) {
     if (status.get('reblogged')) {
       dispatch(unreblog(status));
     } else {
-      if (e.shiftKey || !boostModal) {
-        this.onModalReblog(status);
-      } else {
-        dispatch(openModal('BOOST', { status, onReblog: this.onModalReblog }));
-      }
+      dispatch(reblog(status));
+    }
+  },
+
+  onReblog (status, e) {
+    if ((e && e.shiftKey) || !boostModal) {
+      this.onModalReblog(status);
+    } else {
+      dispatch(openModal('BOOST', { status, onReblog: this.onModalReblog }));
     }
   },
 
@@ -73,6 +100,14 @@ const mapDispatchToProps = (dispatch, { intl }) => ({
       dispatch(unfavourite(status));
     } else {
       dispatch(favourite(status));
+    }
+  },
+
+  onBookmark (status) {
+    if (status.get('bookmarked')) {
+      dispatch(unbookmark(status));
+    } else {
+      dispatch(bookmark(status));
     }
   },
 
@@ -91,14 +126,14 @@ const mapDispatchToProps = (dispatch, { intl }) => ({
     }));
   },
 
-  onDelete (status) {
+  onDelete (status, history, withRedraft = false) {
     if (!deleteModal) {
-      dispatch(deleteStatus(status.get('id')));
+      dispatch(deleteStatus(status.get('id'), history, withRedraft));
     } else {
       dispatch(openModal('CONFIRM', {
-        message: intl.formatMessage(messages.deleteMessage),
-        confirm: intl.formatMessage(messages.deleteConfirm),
-        onConfirm: () => dispatch(deleteStatus(status.get('id'))),
+        message: intl.formatMessage(withRedraft ? messages.redraftMessage : messages.deleteMessage),
+        confirm: intl.formatMessage(withRedraft ? messages.redraftConfirm : messages.deleteConfirm),
+        onConfirm: () => dispatch(deleteStatus(status.get('id'), history, withRedraft)),
       }));
     }
   },
@@ -119,12 +154,13 @@ const mapDispatchToProps = (dispatch, { intl }) => ({
     dispatch(openModal('VIDEO', { media, time }));
   },
 
-  onBlock (account) {
-    dispatch(openModal('CONFIRM', {
-      message: <FormattedMessage id='confirmations.block.message' defaultMessage='Are you sure you want to block {name}?' values={{ name: <strong>@{account.get('acct')}</strong> }} />,
-      confirm: intl.formatMessage(messages.blockConfirm),
-      onConfirm: () => dispatch(blockAccount(account.get('id'))),
-    }));
+  onBlock (status) {
+    const account = status.get('account');
+    dispatch(initBlockModal(account));
+  },
+
+  onUnblock (account) {
+    dispatch(unblockAccount(account.get('id')));
   },
 
   onReport (status) {
@@ -133,6 +169,10 @@ const mapDispatchToProps = (dispatch, { intl }) => ({
 
   onMute (account) {
     dispatch(initMuteModal(account));
+  },
+
+  onUnmute (account) {
+    dispatch(unmuteAccount(account.get('id')));
   },
 
   onMuteConversation (status) {
@@ -149,6 +189,22 @@ const mapDispatchToProps = (dispatch, { intl }) => ({
     } else {
       dispatch(hideStatus(status.get('id')));
     }
+  },
+
+  onToggleCollapsed (status, isCollapsed) {
+    dispatch(toggleStatusCollapse(status.get('id'), isCollapsed));
+  },
+
+  onBlockDomain (domain) {
+    dispatch(openModal('CONFIRM', {
+      message: <FormattedMessage id='confirmations.domain_block.message' defaultMessage='Are you really, really sure you want to block the entire {domain}? In most cases a few targeted blocks or mutes are sufficient and preferable. You will not see content from that domain in any public timelines or your notifications. Your followers from that domain will be removed.' values={{ domain: <strong>{domain}</strong> }} />,
+      confirm: intl.formatMessage(messages.blockDomainConfirm),
+      onConfirm: () => dispatch(blockDomain(domain)),
+    }));
+  },
+
+  onUnblockDomain (domain) {
+    dispatch(unblockDomain(domain));
   },
 
 });

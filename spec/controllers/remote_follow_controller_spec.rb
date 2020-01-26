@@ -10,7 +10,7 @@ describe RemoteFollowController do
       account = Fabricate(:account)
       get :new, params: { account_username: account.to_param }
 
-      expect(response).to have_http_status(:success)
+      expect(response).to have_http_status(200)
       expect(response).to render_template(:new)
       expect(assigns(:remote_follow).acct).to be_nil
     end
@@ -20,7 +20,7 @@ describe RemoteFollowController do
       account = Fabricate(:account)
       get :new, params: { account_username: account.to_param }
 
-      expect(response).to have_http_status(:success)
+      expect(response).to have_http_status(200)
       expect(response).to render_template(:new)
       expect(assigns(:remote_follow).acct).to eq 'user@example.com'
     end
@@ -66,9 +66,7 @@ describe RemoteFollowController do
         end
 
         it 'redirects to the remote location' do
-          address = "http://example.com/follow_me?acct=test_user%40#{Rails.configuration.x.local_domain}"
-
-          expect(response).to redirect_to(address)
+          expect(response).to redirect_to("http://example.com/follow_me?acct=https%3A%2F%2F#{Rails.configuration.x.local_domain}%2Fusers%2Ftest_user")
         end
       end
     end

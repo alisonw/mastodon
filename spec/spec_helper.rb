@@ -1,16 +1,18 @@
-require 'simplecov'
-
 GC.disable
 
-SimpleCov.start 'rails' do
-  add_group 'Services', 'app/services'
-  add_group 'Presenters', 'app/presenters'
-  add_group 'Validators', 'app/validators'
+if ENV['DISABLE_SIMPLECOV'] != 'true'
+  require 'simplecov'
+  SimpleCov.start 'rails' do
+    add_group 'Services', 'app/services'
+    add_group 'Presenters', 'app/presenters'
+    add_group 'Validators', 'app/validators'
+  end
 end
 
 gc_counter = -1
 
 RSpec.configure do |config|
+  config.example_status_persistence_file_path = "tmp/rspec/examples.txt"
   config.expect_with :rspec do |expectations|
     expectations.include_chain_clauses_in_custom_matcher_descriptions = true
   end
@@ -26,6 +28,7 @@ RSpec.configure do |config|
   end
 
   config.before :suite do
+    Rails.application.load_seed
     Chewy.strategy(:bypass)
   end
 

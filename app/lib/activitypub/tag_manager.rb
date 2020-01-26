@@ -17,7 +17,7 @@ class ActivityPub::TagManager
 
     case target.object_type
     when :person
-      short_account_url(target)
+      target.instance_actor? ? about_more_url(instance_actor: true) : short_account_url(target)
     when :note, :comment, :activity
       return activity_account_status_url(target.account, target) if target.reblog?
       short_account_status_url(target.account, target)
@@ -29,7 +29,7 @@ class ActivityPub::TagManager
 
     case target.object_type
     when :person
-      account_url(target)
+      target.instance_actor? ? instance_actor_url : account_url(target)
     when :note, :comment, :activity
       return activity_account_status_url(target.account, target) if target.reblog?
       account_status_url(target.account, target)
@@ -38,10 +38,20 @@ class ActivityPub::TagManager
     end
   end
 
+  def generate_uri_for(_target)
+    URI.join(root_url, 'payloads', SecureRandom.uuid)
+  end
+
   def activity_uri_for(target)
     raise ArgumentError, 'target must be a local activity' unless %i(note comment activity).include?(target.object_type) && target.local?
 
     activity_account_status_url(target.account, target)
+  end
+
+  def replies_uri_for(target, page_params = nil)
+    raise ArgumentError, 'target must be a local activity' unless %i(note comment activity).include?(target.object_type) && target.local?
+
+    account_status_replies_url(target.account, target, page_params)
   end
 
   # Primary audience of a status
@@ -54,8 +64,24 @@ class ActivityPub::TagManager
       [COLLECTIONS[:public]]
     when 'unlisted', 'private'
       [account_followers_url(status.account)]
-    when 'direct'
-      status.mentions.map { |mention| uri_for(mention.account) }
+    when 'direct', 'limited'
+      if status.account.silenced?
+        # Only notify followers if the account is locally silenced
+        account_ids = status.active_mentions.pluck(:account_id)
+        to = status.account.followers.where(id: account_ids).each_with_object([]) do |account, result|
+          result << uri_for(account)
+          result << account.followers_url if account.group?
+        end
+        to.concat(FollowRequest.where(target_account_id: status.account_id, account_id: account_ids).each_with_object([]) do |request, result|
+          result << uri_for(request.account)
+          result << request.account.followers_url if request.account.group?
+        end)
+      else
+        status.active_mentions.each_with_object([]) do |mention, result|
+          result << uri_for(mention.account)
+          result << mention.account.followers_url if mention.account.group?
+        end
+      end
     end
   end
 
@@ -76,12 +102,32 @@ class ActivityPub::TagManager
       cc << COLLECTIONS[:public]
     end
 
-    cc.concat(status.mentions.map { |mention| uri_for(mention.account) }) unless status.direct_visibility?
+    unless status.direct_visibility? || status.limited_visibility?
+      if status.account.silenced?
+        # Only notify followers if the account is locally silenced
+        account_ids = status.active_mentions.pluck(:account_id)
+        cc.concat(status.account.followers.where(id: account_ids).each_with_object([]) do |account, result|
+          result << uri_for(account)
+          result << account.followers_url if account.group?
+        end)
+        cc.concat(FollowRequest.where(target_account_id: status.account_id, account_id: account_ids).each_with_object([]) do |request, result|
+          result << uri_for(request.account)
+          result << request.account.followers_url if request.account.group?
+        end)
+      else
+        cc.concat(status.active_mentions.each_with_object([]) do |mention, result|
+          result << uri_for(mention.account)
+          result << mention.account.followers_url if mention.account.group?
+        end)
+      end
+    end
 
     cc
   end
 
   def local_uri?(uri)
+    return false if uri.nil?
+
     uri  = Addressable::URI.parse(uri)
     host = uri.normalized_host
     host = "#{host}:#{uri.port}" if uri.port
@@ -91,10 +137,13 @@ class ActivityPub::TagManager
 
   def uri_to_local_id(uri, param = :id)
     path_params = Rails.application.routes.recognize_path(uri)
+    path_params[:username] = Rails.configuration.x.local_domain if path_params[:controller] == 'instance_actors'
     path_params[param]
   end
 
   def uri_to_resource(uri, klass)
+    return if uri.nil?
+
     if local_uri?(uri)
       case klass.name
       when 'Account'

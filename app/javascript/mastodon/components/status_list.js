@@ -6,7 +6,7 @@ import StatusContainer from '../containers/status_container';
 import ImmutablePureComponent from 'react-immutable-pure-component';
 import LoadGap from './load_gap';
 import ScrollableList from './scrollable_list';
-import { FormattedMessage } from 'react-intl';
+import RegenerationIndicator from 'mastodon/components/regeneration_indicator';
 
 export default class StatusList extends ImmutablePureComponent {
 
@@ -24,30 +24,50 @@ export default class StatusList extends ImmutablePureComponent {
     hasMore: PropTypes.bool,
     prepend: PropTypes.node,
     emptyMessage: PropTypes.node,
+    alwaysPrepend: PropTypes.bool,
+    timelineId: PropTypes.string,
   };
 
   static defaultProps = {
     trackScroll: true,
   };
 
-  handleMoveUp = id => {
-    const elementIndex = this.props.statusIds.indexOf(id) - 1;
-    this._selectChild(elementIndex);
+  getFeaturedStatusCount = () => {
+    return this.props.featuredStatusIds ? this.props.featuredStatusIds.size : 0;
   }
 
-  handleMoveDown = id => {
-    const elementIndex = this.props.statusIds.indexOf(id) + 1;
-    this._selectChild(elementIndex);
+  getCurrentStatusIndex = (id, featured) => {
+    if (featured) {
+      return this.props.featuredStatusIds.indexOf(id);
+    } else {
+      return this.props.statusIds.indexOf(id) + this.getFeaturedStatusCount();
+    }
+  }
+
+  handleMoveUp = (id, featured) => {
+    const elementIndex = this.getCurrentStatusIndex(id, featured) - 1;
+    this._selectChild(elementIndex, true);
+  }
+
+  handleMoveDown = (id, featured) => {
+    const elementIndex = this.getCurrentStatusIndex(id, featured) + 1;
+    this._selectChild(elementIndex, false);
   }
 
   handleLoadOlder = debounce(() => {
-    this.props.onLoadMore(this.props.statusIds.last());
+    this.props.onLoadMore(this.props.statusIds.size > 0 ? this.props.statusIds.last() : undefined);
   }, 300, { leading: true })
 
-  _selectChild (index) {
-    const element = this.node.node.querySelector(`article:nth-of-type(${index + 1}) .focusable`);
+  _selectChild (index, align_top) {
+    const container = this.node.node;
+    const element = container.querySelector(`article:nth-of-type(${index + 1}) .focusable`);
 
     if (element) {
+      if (align_top && container.scrollTop > element.offsetTop) {
+        element.scrollIntoView(true);
+      } else if (!align_top && container.scrollTop + container.clientHeight < element.offsetTop + element.offsetHeight) {
+        element.scrollIntoView(false);
+      }
       element.focus();
     }
   }
@@ -57,22 +77,11 @@ export default class StatusList extends ImmutablePureComponent {
   }
 
   render () {
-    const { statusIds, featuredStatusIds, onLoadMore, ...other }  = this.props;
+    const { statusIds, featuredStatusIds, shouldUpdateScroll, onLoadMore, timelineId, ...other }  = this.props;
     const { isLoading, isPartial } = other;
 
     if (isPartial) {
-      return (
-        <div className='regeneration-indicator'>
-          <div>
-            <div className='regeneration-indicator__figure' />
-
-            <div className='regeneration-indicator__label'>
-              <FormattedMessage id='regeneration_indicator.label' tagName='strong' defaultMessage='Loading&hellip;' />
-              <FormattedMessage id='regeneration_indicator.sublabel' defaultMessage='Your home feed is being prepared!' />
-            </div>
-          </div>
-        </div>
-      );
+      return <RegenerationIndicator />;
     }
 
     let scrollableContent = (isLoading || statusIds.size > 0) ? (
@@ -89,6 +98,8 @@ export default class StatusList extends ImmutablePureComponent {
           id={statusId}
           onMoveUp={this.handleMoveUp}
           onMoveDown={this.handleMoveDown}
+          contextType={timelineId}
+          showThread
         />
       ))
     ) : null;
@@ -101,12 +112,14 @@ export default class StatusList extends ImmutablePureComponent {
           featured
           onMoveUp={this.handleMoveUp}
           onMoveDown={this.handleMoveDown}
+          contextType={timelineId}
+          showThread
         />
       )).concat(scrollableContent);
     }
 
     return (
-      <ScrollableList {...other} onLoadMore={onLoadMore && this.handleLoadOlder} ref={this.setRef}>
+      <ScrollableList {...other} showLoading={isLoading && statusIds.size === 0} onLoadMore={onLoadMore && this.handleLoadOlder} shouldUpdateScroll={shouldUpdateScroll} ref={this.setRef}>
         {scrollableContent}
       </ScrollableList>
     );
